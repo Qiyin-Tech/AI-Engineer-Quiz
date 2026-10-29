@@ -2,7 +2,7 @@
 name = "keepstack"
 version = "0.1.0"
 description = "A free, open-source, AI-native digital asset management system built to archival and government-grade standards."
-readme = "README.md"
+readme = "README.upstream.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Kevin Yu", email = "noreply@example.org" }]

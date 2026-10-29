@@ -1,217 +1,113 @@
-<div align="center">
+# AI 应用开发工程师 测试题：素材检索与结果导出
 
-# Keepstack
+改造现有素材管理应用，支持组合筛选、分页和 CSV 导出。
 
-**A free, open-source, AI-native digital asset management system, built to archival and government-grade standards.**
+建议用时 **4 小时**，包含阅读、实现、验证和交付说明。提交当前成果，并注明未完成项。**鼓励使用 AI 编程工具。**
 
-[![CI](https://github.com/exekyute/keepstack/actions/workflows/ci.yml/badge.svg)](https://github.com/exekyute/keepstack/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-![Python](https://img.shields.io/badge/python-3.10%2B-blue)
-![Runtime deps](https://img.shields.io/badge/runtime%20deps-4-green)
-![Status](https://img.shields.io/badge/status-v0.1.0-blueviolet)
+## 开始之前
 
-![A short screen recording of Keepstack ingesting assets and running a semantic search.](docs/screenshots/demo.gif)
+1. **Fork 本仓库**，从收到题目时的版本创建工作分支，不要重新初始化仓库。
+2. **按实际开发过程提交，完整保留上游和作业历史**，供 review 使用。
+3. 不 squash、amend 或 rebase 改写作业提交；修正使用新的 commit。
 
-</div>
+项目基于 [Keepstack](https://github.com/exekyute/keepstack)，使用 Python / FastAPI、SQLite / FTS5 和原生 JavaScript，已有登录、上传、素材编辑、标签、集合和搜索功能。参考 [原项目说明](README.upstream.md)及[架构文档](ARCHITECTURE.md)，作业要求以本文为准。
 
-Keepstack manages images, video, audio, and documents the way a national archive
-would want, and searches them the way a modern product would. It sits in a gap
-no open-source tool currently fills: the heritage and preservation systems have
-deep metadata standards but archaic interfaces and no AI, while the slick AI
-photo libraries have no archival standards at all. Keepstack has both, plus an
-install that takes one command.
+已有实现可能存在缺陷。影响本题要求的需要修复，范围外的问题记录即可。
 
-## Start here
+## 业务场景
 
-Pick your path. You do not need to read everything.
+内容运营需要筛选并导出一批素材：
 
-- **I want to run it.** Jump to the [Quickstart](#quickstart) below.
-- **I want the reasoning.** [DESIGN.md](DESIGN.md) covers the market, the gap,
-  and the decisions behind Keepstack.
-- **I want to understand the code.** [ARCHITECTURE.md](ARCHITECTURE.md) has
-  diagrams that render right here on GitHub.
-- **I am new to this domain.** Start with the [DAM-101 primer](docs/DAM-101.md).
+1. 在某个集合中搜索 “harbor”，要求同时带有 `approved` 和 `campaign` 标签，排除带有 `internal` 标签的素材；
+2. 按创建时间排序查看结果；
+3. 导出所有匹配素材的 CSV 清单。
 
-## The problem, in three sentences
+在现有页面完成上述操作，界面清楚可用即可。
 
-The digital asset management market splits into two camps that never met.
-Standards-rich archival tools (DSpace, Archivematica, Preservica) have deep
-metadata and preservation but hard installs, dated interfaces, and no AI, while
-modern AI photo libraries (Immich, PhotoPrism) have great search and UX but no
-Dublin Core, no OAI-PMH, and no IIIF. Keepstack is built to occupy the empty
-intersection: archival standards, plus modern local AI, plus a clean interface,
-free and self-hostable in one command.
+## 需要完成的功能
 
-The full study of the top 20 systems is in [RESEARCH.md](RESEARCH.md), and a
-head-to-head capability matrix (graded against the source, audited for
-overclaiming) is in [COMPARISON.md](COMPARISON.md).
+### 1. 组合筛选
 
-## What it does
+支持以下条件组合：
 
-<table>
-<tr><td valign="top" width="50%">
+| 条件 | 语义 |
+| --- | --- |
+| 关键词 | 沿用现有 FTS 的搜索字段和分词方式；空白输入表示不限制关键词 |
+| 集合 | 选择一个集合，或不限制集合 |
+| 包含标签 | 可以指定多个，素材必须包含全部指定标签 |
+| 排除标签 | 可以指定多个，素材只要包含其中任意一个就应被排除 |
 
-**Ingest and storage**
-- Bulk drag-and-drop for images, video, audio, documents
-- Content-addressable storage: identical files stored once
-- SHA-256 fixity for verifiable integrity
-- Full version history per asset
+各类条件取交集，只返回 `active` 素材。标签按完整名称匹配，沿用现有大小写处理；重复标签不影响结果，同一标签同时包含和排除时返回空结果。
 
-**Metadata and standards**
-- EXIF, IPTC, and XMP extracted on upload
-- Dublin Core mapping for every asset
-- Alt-text as a first-class field, AI-suggested
-- Rights, license, credit, and retention fields
+页面展示生效条件，支持修改和清除。保留素材类型筛选，并将其应用于导出。
 
-</td><td valign="top" width="50%">
+### 2. 排序与分页
 
-**Search and discovery**
-- Full-text (SQLite FTS5), faceted, and semantic search
-- "More like this" via embeddings
-- Text inside images is searchable when Tesseract is installed
-- Hierarchical collections
+- 支持按创建时间升序、降序排列，有关键词时也遵守所选排序。
+- 提供上一页、下一页和匹配总数，每页条数自定。
+- 数据不变时排序稳定，创建时间相同也不应导致跨页重复或遗漏。
+- 修改筛选或排序后回到第一页；快速切换条件时，最终结果对应最新条件。
+- 合理处理空结果、加载失败、非法分页参数和特殊字符输入。
 
-**Governance and sharing**
-- Four roles, audit log on every change
-- Expiring, download-limited public share links
-- One-click repository fixity check
+### 3. 导出全部匹配结果
 
-**Open endpoints (no lock-in)**
-- OAI-PMH 2.0 harvesting, IIIF Image API
-- A clean REST API for everything
+在当前搜索页面增加 CSV 导出入口：
 
-</td></tr>
-</table>
+- 导出**全部匹配素材**，筛选和排序与列表一致，不受当前页限制。
+- 至少包含 `uuid`、`title`、`description`、`filename`、`media_type`、`tags`、`created_at`。多标签格式自定，在交付说明中注明。
+- 支持中文以及字段中的逗号、引号、换行；零条结果时仍输出表头。
+- 沿用现有登录鉴权，支持从页面下载，并提示下载失败。
 
-## Quickstart
+仅导出信息清单，不包含素材文件。
 
-Keepstack needs Python 3.10 or newer. Everything else (auth, tokens, standards
-endpoints) is standard library, so the runtime dependency list is four packages.
+### 4. 修改后结果正确
 
-```bash
-git clone https://github.com/exekyute/keepstack.git
-cd keepstack
-python -m pip install -r requirements.txt
-python -m keepstack seed      # optional: generate a synthetic demo catalog
-python -m keepstack           # start the server on http://localhost:8000
-```
+通过已有入口修改标题、描述或标签后，下一次查询和导出应反映修改。
 
-Then open http://localhost:8000 and sign in as **admin** / **admin**. Prefer
-containers? `docker compose up` does the same thing.
+## 范围与实现选择
 
-## Screenshots
+- 保留现有应用和主要技术栈，具体实现自定；新增组件需说明收益和成本。
+- 只验收关键词搜索，可隐藏语义搜索入口。不要求模型接入、相关性优化、新权限体系、异步导出、实时订阅或线上部署。
+- 分页及列表与导出的一致性均在数据不变时验收，不要求跨请求快照。
+- 筛选选项的统计数字无需联动，但不能误标为当前匹配数。
 
-| Asset detail | Semantic search | Dashboard |
-|---|---|---|
-| ![The asset detail view showing extracted metadata and Dublin Core fields.](docs/screenshots/04-asset-detail.png) | ![Semantic search results ranked by embedding similarity.](docs/screenshots/03-semantic-search.png) | ![The dashboard with catalog counts and recent activity.](docs/screenshots/05-dashboard.png) |
+## 验证与交付
 
-<details>
-<summary><b>Open standards and endpoints</b></summary>
+为关键行为补充自动化测试，提供可复现的数据或生成方式。至少覆盖组合筛选、多页结果、相同创建时间、导出一致性和修改后的查询结果。
 
-Every asset is reachable through open, interoperable standards, so your catalog
-is discoverable and your data is never trapped.
+提交时提供：
 
-| Endpoint | Standard |
-|----------|----------|
-| `GET /oai` | OAI-PMH 2.0 metadata harvesting (oai_dc) |
-| `GET /iiif/3/{uuid}/info.json` | IIIF Image API 3.0 |
-| `GET /api/assets/{uuid}` (includes `dublin_core`) | Dublin Core |
-| `GET /api/...` | Full REST API for every resource |
+1. **Fork 链接、分支、最终 commit SHA**，确保 reviewer 可访问。无需向上游 Keepstack 提 PR。
+2. 代码、测试及数据生成方式。不提交本地数据库、上传文件、凭据或虚拟环境。
+3. 简短的 `SUBMISSION.md`：运行与验证步骤、实测结果、主要取舍、限制及未完成项。
 
-</details>
+Review 关注需求完成度、正确性和工程取舍，并结合提交历史讨论关键决策。
 
-<details>
-<summary><b>Configuration</b></summary>
+## 本地运行参考
 
-All configuration is environment-driven with safe local defaults.
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `KEEPSTACK_DATA_DIR` | `data` | Where the SQLite database and blobs live |
-| `KEEPSTACK_SECRET_KEY` | generated | Token signing key (set this in production) |
-| `KEEPSTACK_ADMIN_USER` / `KEEPSTACK_ADMIN_PASSWORD` | `admin` / `admin` | Bootstrap admin, created once |
-| `KEEPSTACK_PORT` | `8000` | HTTP port |
-| `KEEPSTACK_TRUSTED_PROXIES` | unset | Comma-separated proxy IPs/CIDRs whose `X-Forwarded-For` to trust |
-| `KEEPSTACK_OCR_ENABLED` | `true` | OCR images with Tesseract when the binary is installed |
-| `KEEPSTACK_AI_ENABLED` | `false` | Turn on provider-backed AI |
-| `GROQ_API_KEY` | unset | Optional: vision tagging / captioning / alt-text |
-| `COHERE_API_KEY` | unset | Optional: higher-quality semantic embeddings |
-
-AI works in three tiers, and every tier is optional:
-
-1. **Zero config.** Deterministic local fallbacks (lexical embeddings, colour
-   and orientation tags). Nothing to install, works air-gapped.
-2. **Local model (recommended).** `pip install onnxruntime`, then
-   `python -m keepstack reindex`. Keepstack downloads a small quantized CLIP
-   model once (about 150 MB, cached in the data directory) and runs it
-   on-device: real semantic search over image content, visual "more like
-   this", and zero-shot auto-tagging, with no API keys and no cloud calls.
-3. **Cloud keys.** Add `GROQ_API_KEY` (vision captions and alt-text) or
-   `COHERE_API_KEY` (text embeddings) for provider-backed quality.
-
-See [ADR-0004](docs/decisions/ADR-0004-optional-offline-ai.md) for the design.
-
-</details>
-
-<details>
-<summary><b>Roles</b></summary>
-
-| Role | Can do |
-|------|--------|
-| **viewer** | Browse, search, view, download |
-| **contributor** | Plus upload, edit metadata, tag, create collections and share links |
-| **editor** | Plus delete assets and manage versions |
-| **admin** | Plus user management, audit log, custom fields, fixity checks |
-
-The seed script also creates `curator` (editor), `contributor`, and `viewer`
-demo accounts, password `demo1234`.
-
-</details>
-
-## Testing
+需要 Python 3.10+。克隆自己的 fork 后，在仓库根目录执行：
 
 ```bash
-cd keepstack
-python -m pip install pytest
-python -m pytest -q
+uv venv --python 3.12
+uv pip install -e '.[dev]'
+
+export KEEPSTACK_AI_ENABLED=false
+export KEEPSTACK_OCR_ENABLED=false
+
+uv run --no-sync python -m keepstack seed
+uv run --no-sync python -m keepstack
 ```
 
-The suite covers the ingest pipeline, content deduplication, full-text and
-semantic search, fixity detection of corruption, and the Dublin Core / OAI-PMH
-output.
+打开 <http://localhost:8000>，账号 `admin` / `admin`。Seed 生成 24 个素材和 3 个集合。
 
-## Known rough edges
+运行测试：
 
-Keepstack is v0.1.0, and it is specific about the ground it has not taken yet.
-The full graded comparison is in [COMPARISON.md](COMPARISON.md); the short list:
+```bash
+uv run --no-sync python -m pytest -q
+```
 
-- **The minimal install is heuristic.** Real semantic search, visual "more like
-  this", and auto-tagging need one optional local model: `pip install
-  onnxruntime` then `python -m keepstack reindex` downloads a small on-device
-  CLIP model, no API keys. Until you do that, the zero-config tier falls back to
-  lexical embeddings and colour tags.
-- **Preservation is fixity, not format migration.** SHA-256 fixity verifies
-  integrity and catches corruption, but OAIS-style active format migration is on
-  the [roadmap](ROADMAP.md), not shipped.
-- **No published VPAT and no SSO yet.** Alt-text is a first-class field, but a
-  Section 508 / WCAG conformance report and SAML/OIDC sign-in are planned rather
-  than done.
+可采用其他运行方式；依赖和启动流程应支持在干净环境中复现。
 
-## Documentation map
+## 开源许可
 
-| Document | What it is |
-|----------|------------|
-| [DESIGN.md](DESIGN.md) | The narrative: market, gap, decisions, results, honest assessment |
-| [RESEARCH.md](RESEARCH.md) | The top-20 market study, government-focused, citation-backed |
-| [COMPARISON.md](COMPARISON.md) | Head-to-head capability matrix vs seven leading systems |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | How the code fits together, with diagrams |
-| [docs/DAM-101.md](docs/DAM-101.md) | A primer on DAM concepts and standards |
-| [docs/decisions/](docs/decisions/) | Architecture decision records |
-| [DEVLOG.md](DEVLOG.md) | Build notes in the order they happened |
-| [ROADMAP.md](ROADMAP.md) | Shipped vs planned |
-| [CONTRIBUTING.md](CONTRIBUTING.md) / [SECURITY.md](SECURITY.md) | For builders |
-
-## License
-
-MIT. Copyright (c) 2026 Kevin Yu ([github.com/exekyute](https://github.com/exekyute)).
-See [LICENSE](LICENSE).
+原项目采用 MIT 许可，保留原作者声明，见 [LICENSE](LICENSE)。

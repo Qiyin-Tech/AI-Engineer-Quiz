@@ -4,6 +4,7 @@ import io
 import json
 import sqlite3
 import threading
+from urllib.parse import quote
 
 import pytest
 from fastapi.testclient import TestClient
@@ -119,6 +120,21 @@ def test_invalid_parameters(catalog, params):
     assert client.get("/api/assets", params=params).status_code == 422
 
 
+@pytest.mark.parametrize("endpoint", ["/api/assets", "/api/assets/export.csv"])
+@pytest.mark.parametrize("collection_id", [0, 1, 2**63 - 1, 2**63, 2**64])
+def test_collection_id_sqlite_bounds(catalog, endpoint, collection_id):
+    client, asset = catalog
+    uuid = asset()
+    response = client.get(endpoint, params={"collection_id": collection_id})
+    if not 1 <= collection_id <= 2**63 - 1:
+        assert response.status_code == 422
+        assert response.json()["detail"][0]["loc"] == ["query", "collection_id"]
+    else:
+        actual = (ids(response) if endpoint == "/api/assets"
+                  else [r["uuid"] for r in csv_rows(response)])
+        assert actual == ([uuid] if collection_id == 1 else [])
+
+
 def test_keyword_special_characters_and_all_search_fields(catalog):
     client, asset = catalog
     wanted = asset(title="港口 Harbor", description="needlecaption", tags=("tagneedle",),
@@ -210,5 +226,26 @@ def test_edits_refresh_queries_and_exports(catalog):
         assert ids(client.get("/api/assets", params=params)) == [uuid]
         assert json.loads(csv_rows(client.get("/api/assets/export.csv", params=params))[0]["tags"]) == ["newtag"]
     for params in ({"q": "oldtag"}, {"include_tags": "oldtag"}, {"exclude_tags": "newtag"}):
+        assert ids(client.get("/api/assets", params=params)) == []
+        assert csv_rows(client.get("/api/assets/export.csv", params=params)) == []
+
+
+@pytest.mark.parametrize("name,keyword", [("topic/harbor", "topic"),
+                                         ("标签/活动", "标签"),
+                                         ("topic//harbor", "topic")])
+def test_remove_slash_tag_refreshes_queries_and_exports(catalog, name, keyword):
+    client, asset = catalog
+    uuid = asset(title="Neutral sample", tags=())
+    base = f"/api/assets/{uuid}"
+    assert client.post(base + "/tags", json={"name": name}).status_code == 200
+    for params in ({"q": keyword}, {"include_tags": name}):
+        assert ids(client.get("/api/assets", params=params)) == [uuid]
+        rows = csv_rows(client.get("/api/assets/export.csv", params=params))
+        assert [r["uuid"] for r in rows] == [uuid]
+        assert json.loads(rows[0]["tags"]) == [name]
+    # Match the browser's encodeURIComponent: the slash is encoded in the URL.
+    assert client.delete(base + "/tags/" + quote(name, safe="")).status_code == 200
+    assert client.get(base).json()["tags"] == []
+    for params in ({"q": keyword}, {"include_tags": name}):
         assert ids(client.get("/api/assets", params=params)) == []
         assert csv_rows(client.get("/api/assets/export.csv", params=params)) == []

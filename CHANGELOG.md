@@ -6,6 +6,13 @@ semantic versioning.
 
 ## [Unreleased]
 
+### Fixed
+
+- Allow slash-containing tag names to be removed through the existing detail
+  page, keeping keyword queries and CSV exports in sync after removal.
+- Validate collection IDs against SQLite's signed 64-bit integer range for
+  both asset listing and CSV export, returning 422 for oversized values.
+
 ### Added
 
 - Combined keyword, collection, media type, all-required tags and excluded tags

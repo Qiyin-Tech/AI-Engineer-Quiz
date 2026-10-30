@@ -180,7 +180,7 @@ def asset_filters(
     tag: Optional[str] = None,
     include_tags: list[str] = Query(default=[]),
     exclude_tags: list[str] = Query(default=[]),
-    collection_id: Optional[int] = Query(None, ge=1),
+    collection_id: Optional[int] = Query(None, ge=1, le=9223372036854775807),
     status: Literal["active"] = "active",
     sort: Literal["newest", "oldest", "name", "largest"] = "newest",
     mode: Literal["keyword"] = "keyword",
@@ -337,7 +337,7 @@ def add_tag(uuid: str, request: Request, body: dict = Body(...),
     return {"ok": True}
 
 
-@app.delete("/api/assets/{uuid}/tags/{name}")
+@app.delete("/api/assets/{uuid}/tags/{name:path}")
 def remove_tag(uuid: str, name: str, user: dict = Depends(require_role("contributor"))):
     a = _get_asset_or_404(uuid)
     with transaction() as conn:

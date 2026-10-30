@@ -104,7 +104,7 @@ Linux 使用 `.venv/bin/python`，安装浏览器可执行 `python -m playwright
 - 演示生成器连续运行两次后，独立数据库仍为 **60 条素材**。
 - `node --check web/app.js`、`git diff --check` 通过。
 - 两个跳过项是原有可选 CLIP 模型与 Tesseract 测试，本机未安装；保留原有 startup 的弃用提示及测试依赖弃用提示，不影响功能结果。
-- GitHub Actions 已配置工作分支触发、Python 3.10/3.12 API 测试和 Chromium 浏览器验收任务。本文记录的是本地实测结果，远程 CI 尚待提交者后续运行与确认；实际结果见 [Actions 页面](https://github.com/Szk1222/AI-Engineer-Quiz/actions)。
+- GitHub Actions **CI 已通过**：提交 `fb5a8de9ce49257f935cdf280a747dc0f9c3c431` 对应的 Python 3.10、Python 3.12 API 测试和 Chromium 浏览器验收三个任务均成功，见 [CI 运行记录](https://github.com/Szk1222/AI-Engineer-Quiz/actions/runs/41056217376)。后续仅更新本文的 CI 状态说明；最新运行结果见 [Actions 页面](https://github.com/Szk1222/AI-Engineer-Quiz/actions)。
 
 ## 主要取舍与限制
 

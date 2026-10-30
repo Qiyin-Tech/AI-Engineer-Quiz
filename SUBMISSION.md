@@ -2,9 +2,10 @@
 
 ## 仓库与实现范围
 
-- Fork：https://github.com/Szk1222/AI-Engineer-Quiz
-- 开发分支：`feat/asset-search-export`
-- 最终 SHA：在交付邮件中提供；本地执行 `git rev-parse HEAD` 可核对。
+- Fork：[Szk1222/AI-Engineer-Quiz](https://github.com/Szk1222/AI-Engineer-Quiz)
+- 开发分支：[`feat/asset-search-export`](https://github.com/Szk1222/AI-Engineer-Quiz/tree/feat/asset-search-export)
+- 边界问题修复提交：[`352c22feb7b5c61fa87d007733860aa36533f981`](https://github.com/Szk1222/AI-Engineer-Quiz/commit/352c22feb7b5c61fa87d007733860aa36533f981)，包含斜杠标签删除与集合 ID 上限校验及回归测试。
+- 最终 SHA：包含后续文档更新，以提交分支的最终 HEAD 为准；交付邮件中填写 `git rev-parse HEAD` 的完整输出。
 - 从题目版本 `3aa137ccde6f981981582f6f71b81448c72a9dab` 开始，保留上游与阶段提交历史。
 - 完成组合筛选、稳定排序分页、全部结果 CSV 导出、编辑后的查询/导出同步，以及对应自动化验证。保留 FastAPI、SQLite/FTS5、原生 JavaScript 技术栈，无新增运行时依赖。
 
@@ -103,7 +104,7 @@ Linux 使用 `.venv/bin/python`，安装浏览器可执行 `python -m playwright
 - 演示生成器连续运行两次后，独立数据库仍为 **60 条素材**。
 - `node --check web/app.js`、`git diff --check` 通过。
 - 两个跳过项是原有可选 CLIP 模型与 Tesseract 测试，本机未安装；保留原有 startup 的弃用提示及测试依赖弃用提示，不影响功能结果。
-- GitHub Actions 增加工作分支触发，保留 Python 3.10/3.12 API 测试，并增加 Chromium 浏览器验收任务；远程实际执行结果以 Actions 页面为准。
+- GitHub Actions 已配置工作分支触发、Python 3.10/3.12 API 测试和 Chromium 浏览器验收任务。本文记录的是本地实测结果，远程 CI 尚待提交者后续运行与确认；实际结果见 [Actions 页面](https://github.com/Szk1222/AI-Engineer-Quiz/actions)。
 
 ## 主要取舍与限制
 

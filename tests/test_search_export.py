@@ -73,6 +73,7 @@ def test_combined_filters_and_tag_edges(catalog):
     client, asset = catalog
     wanted = asset()
     asset(tags=("approved", "campaign", "internal"))
+    asset(tags=("approved", "campaign", "private"))
     asset(tags=("approved",))
     asset(tags=("approved-extra", "campaign"))
     asset(collection=2)
@@ -83,7 +84,8 @@ def test_combined_filters_and_tag_edges(catalog):
     params = [("q", "harbor"), ("collection_id", 1), ("media_type", "image"),
               ("include_tags", " Approved "), ("include_tags", "campaign"),
               ("include_tags", "approved"), ("exclude_tags", "internal"),
-              ("exclude_tags", "unknown")]
+              ("exclude_tags", "unknown"), ("exclude_tags", "private"),
+              ("exclude_tags", " INTERNAL ")]
     result = client.get("/api/assets", params=params)
     assert ids(result) == [wanted]
     assert result.json()["total"] == 1
@@ -173,6 +175,9 @@ def test_csv_unicode_escaping_empty_and_auth(catalog):
     filename = '港口,"素材".txt'
     asset(title=title, description=description, filename=filename, tags=('标签,带逗号', 'a"b'))
     asset(title="No tags", tags=())
+    exact = client.get("/api/assets", params={"include_tags": "标签,带逗号"})
+    assert len(ids(exact)) == 1
+    assert ids(client.get("/api/assets", params={"include_tags": "标签"})) == []
     rows = csv_rows(client.get("/api/assets/export.csv", params={"sort": "oldest"}))
     assert rows[0]["title"] == title
     assert rows[0]["description"] == description

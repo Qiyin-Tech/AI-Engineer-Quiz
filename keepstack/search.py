@@ -17,10 +17,10 @@ from . import ai
 from .db import get_conn
 
 SORTS = {
-    "newest": "a.created_at DESC",
-    "oldest": "a.created_at ASC",
-    "name": "a.title ASC",
-    "largest": "a.size DESC",
+    "newest": "a.created_at DESC, a.id DESC",
+    "oldest": "a.created_at ASC, a.id ASC",
+    "name": "a.title ASC, a.id ASC",
+    "largest": "a.size DESC, a.id DESC",
 }
 
 
@@ -30,11 +30,48 @@ def _fts_query(q: str) -> str:
     return " ".join(f'"{t}"*' for t in terms)
 
 
+def matching_query(
+    *, q="", media_type=None, tag=None, collection_id=None,
+    include_tags=(), exclude_tags=(), status="active", sort="newest",
+) -> tuple[str, list, str]:
+    """Shared unpaginated selection for list, count and CSV. Values are bound."""
+    where, params = ["a.status = ?"], [status]
+    join = ""
+    if q.strip():
+        fts = _fts_query(q)
+        if fts:
+            join = " JOIN asset_fts ON asset_fts.rowid = a.id"
+            where.append("asset_fts MATCH ?")
+            params.append(fts)
+        else:
+            # Nonempty punctuation contains no searchable terms.
+            where.append("0")
+    if media_type:
+        where.append("a.media_type = ?")
+        params.append(media_type)
+    if collection_id is not None:
+        where.append("EXISTS (SELECT 1 FROM collection_assets ca "
+                     "WHERE ca.asset_id = a.id AND ca.collection_id = ?)")
+        params.append(collection_id)
+    included = {t.strip().lower() for t in (*include_tags, tag or "") if t.strip()}
+    excluded = {t.strip().lower() for t in exclude_tags if t.strip()}
+    for names, negate in ((included, False), (excluded, True)):
+        for name in sorted(names):
+            where.append(("NOT " if negate else "") +
+                         "EXISTS (SELECT 1 FROM asset_tags at JOIN tags t ON t.id = at.tag_id "
+                         "WHERE at.asset_id = a.id AND t.name = ?)")
+            params.append(name)
+    return (f"FROM assets a{join} WHERE {' AND '.join(where)}",
+            params, SORTS.get(sort, SORTS["newest"]))
+
+
 def search(
     *,
     q: str = "",
     media_type: Optional[str] = None,
     tag: Optional[str] = None,
+    include_tags: tuple | list = (),
+    exclude_tags: tuple | list = (),
     collection_id: Optional[int] = None,
     status: str = "active",
     sort: str = "newest",
@@ -48,34 +85,16 @@ def search(
     if mode == "semantic" and q.strip():
         return _semantic_search(q, media_type, status, limit, offset)
 
-    where = ["a.status = ?"]
-    params: list = [status]
-    join = ""
-
-    if q.strip():
-        join += " JOIN asset_fts f ON f.rowid = a.id"
-        where.append("asset_fts MATCH ?")
-        params.append(_fts_query(q))
-    if media_type:
-        where.append("a.media_type = ?")
-        params.append(media_type)
-    if tag:
-        join += (" JOIN asset_tags at ON at.asset_id = a.id"
-                 " JOIN tags t ON t.id = at.tag_id AND t.name = ?")
-        params.append(tag.lower())
-    if collection_id:
-        join += " JOIN collection_assets ca ON ca.asset_id = a.id AND ca.collection_id = ?"
-        params.append(collection_id)
-
-    where_sql = " AND ".join(where)
-    order = "bm25(asset_fts)" if q.strip() else SORTS.get(sort, SORTS["newest"])
+    selection, params, order = matching_query(
+        q=q, media_type=media_type, tag=tag, collection_id=collection_id,
+        include_tags=include_tags, exclude_tags=exclude_tags, status=status, sort=sort)
 
     total = conn.execute(
-        f"SELECT COUNT(*) AS c FROM assets a{join} WHERE {where_sql}", params
+        f"SELECT COUNT(*) AS c {selection}", params
     ).fetchone()["c"]
 
     rows = conn.execute(
-        f"""SELECT a.* FROM assets a{join} WHERE {where_sql}
+        f"""SELECT a.* {selection}
             ORDER BY {order} LIMIT ? OFFSET ?""",
         [*params, limit, offset],
     ).fetchall()

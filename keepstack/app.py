@@ -7,10 +7,11 @@ single-page web client is served from the ``web/`` directory at the root.
 from __future__ import annotations
 
 import io
+import csv
 import ipaddress
 import json
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import (Body, Depends, FastAPI, File, Form, HTTPException, Query,
                      Request, UploadFile)
@@ -173,21 +174,50 @@ async def upload_assets(
     return {"created": results}
 
 
-@app.get("/api/assets")
-def list_assets(
+def asset_filters(
     q: str = "",
     media_type: Optional[str] = None,
     tag: Optional[str] = None,
-    collection_id: Optional[int] = None,
-    status: str = "active",
-    sort: str = "newest",
-    mode: str = "keyword",
-    limit: int = Query(60, le=200),
-    offset: int = 0,
+    include_tags: list[str] = Query(default=[]),
+    exclude_tags: list[str] = Query(default=[]),
+    collection_id: Optional[int] = Query(None, ge=1, le=9223372036854775807),
+    status: Literal["active"] = "active",
+    sort: Literal["newest", "oldest", "name", "largest"] = "newest",
+    mode: Literal["keyword"] = "keyword",
+):
+    return dict(q=q, media_type=media_type, tag=tag, collection_id=collection_id,
+                include_tags=include_tags, exclude_tags=exclude_tags, status=status, sort=sort)
+
+
+@app.get("/api/assets")
+def list_assets(
+    filters: dict = Depends(asset_filters),
+    limit: int = Query(60, ge=1, le=200),
+    offset: int = Query(0, ge=0, le=9223372036854775807),
     user: dict = Depends(require_user),
 ):
-    return search.search(q=q, media_type=media_type, tag=tag, collection_id=collection_id,
-                         status=status, sort=sort, mode=mode, limit=limit, offset=offset)
+    return search.search(**filters, limit=limit, offset=offset)
+
+
+@app.get("/api/assets/export.csv")
+def export_assets(filters: dict = Depends(asset_filters), user: dict = Depends(require_user)):
+    selection, params, order = search.matching_query(**filters)
+    conn = get_conn()
+    # The outer query preserves selection order; tags are aggregated once per asset.
+    rows = conn.execute(f"""SELECT a.uuid, a.title, a.description, a.filename,
+        a.media_type, a.created_at,
+        (SELECT json_group_array(name) FROM
+            (SELECT t.name FROM tags t JOIN asset_tags at ON at.tag_id=t.id
+             WHERE at.asset_id=a.id ORDER BY t.name)) AS tags
+        {selection} ORDER BY {order}""", params)
+    output = io.StringIO(newline="")
+    fields = ["uuid", "title", "description", "filename", "media_type", "tags", "created_at"]
+    writer = csv.DictWriter(output, fieldnames=fields)
+    writer.writeheader()
+    for row in rows:
+        writer.writerow(dict(row))
+    return Response(output.getvalue().encode("utf-8-sig"), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": 'attachment; filename="assets.csv"'})
 
 
 def _get_asset_or_404(uuid: str) -> dict:
@@ -307,7 +337,7 @@ def add_tag(uuid: str, request: Request, body: dict = Body(...),
     return {"ok": True}
 
 
-@app.delete("/api/assets/{uuid}/tags/{name}")
+@app.delete("/api/assets/{uuid}/tags/{name:path}")
 def remove_tag(uuid: str, name: str, user: dict = Depends(require_role("contributor"))):
     a = _get_asset_or_404(uuid)
     with transaction() as conn:

@@ -7,6 +7,7 @@ single-page web client is served from the ``web/`` directory at the root.
 from __future__ import annotations
 
 import io
+import csv
 import ipaddress
 import json
 from pathlib import Path
@@ -196,6 +197,27 @@ def list_assets(
     user: dict = Depends(require_user),
 ):
     return search.search(**filters, limit=limit, offset=offset)
+
+
+@app.get("/api/assets/export.csv")
+def export_assets(filters: dict = Depends(asset_filters), user: dict = Depends(require_user)):
+    selection, params, order = search.matching_query(**filters)
+    conn = get_conn()
+    # The outer query preserves selection order; tags are aggregated once per asset.
+    rows = conn.execute(f"""SELECT a.uuid, a.title, a.description, a.filename,
+        a.media_type, a.created_at,
+        (SELECT json_group_array(name) FROM
+            (SELECT t.name FROM tags t JOIN asset_tags at ON at.tag_id=t.id
+             WHERE at.asset_id=a.id ORDER BY t.name)) AS tags
+        {selection} ORDER BY {order}""", params)
+    output = io.StringIO(newline="")
+    fields = ["uuid", "title", "description", "filename", "media_type", "tags", "created_at"]
+    writer = csv.DictWriter(output, fieldnames=fields)
+    writer.writeheader()
+    for row in rows:
+        writer.writerow(dict(row))
+    return Response(output.getvalue().encode("utf-8-sig"), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": 'attachment; filename="assets.csv"'})
 
 
 def _get_asset_or_404(uuid: str) -> dict:

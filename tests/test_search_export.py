@@ -135,3 +135,75 @@ def test_list_requires_login(catalog):
     client, _ = catalog
     client.headers.pop("Authorization")
     assert client.get("/api/assets").status_code == 401
+
+
+def csv_rows(response):
+    assert response.status_code == 200, response.text
+    assert response.content.startswith(b"\xef\xbb\xbf")
+    return list(csv.DictReader(io.StringIO(response.content.decode("utf-8-sig"), newline="")))
+
+
+@pytest.mark.parametrize("sort", ["newest", "oldest"])
+def test_csv_matches_all_filtered_pages_in_order(catalog, sort):
+    client, asset = catalog
+    for _ in range(53):
+        asset()
+    asset(tags=("approved", "campaign", "internal"))
+    asset(collection=2)
+    asset(media="document")
+    asset(status="deleted")
+    params = [("q", "harbor"), ("include_tags", "approved"), ("include_tags", "campaign"),
+              ("exclude_tags", "internal"), ("collection_id", 1), ("media_type", "image"),
+              ("sort", sort)]
+    expected = []
+    for offset in (0, 24, 48):
+        expected.extend(ids(client.get("/api/assets", params=params + [("limit", 24), ("offset", offset)])))
+    response = client.get("/api/assets/export.csv", params=params + [("limit", 1), ("offset", 48)])
+    assert "attachment" in response.headers["content-disposition"]
+    assert response.headers["content-type"].startswith("text/csv")
+    rows = csv_rows(response)
+    assert [r["uuid"] for r in rows] == expected
+    assert len(rows) == 53
+
+
+def test_csv_unicode_escaping_empty_and_auth(catalog):
+    client, asset = catalog
+    title = '港口, "活动"\n第二行'
+    description = '说明\r\n包含,逗号和"引号"'
+    filename = '港口,"素材".txt'
+    asset(title=title, description=description, filename=filename, tags=('标签,带逗号', 'a"b'))
+    asset(title="No tags", tags=())
+    rows = csv_rows(client.get("/api/assets/export.csv", params={"sort": "oldest"}))
+    assert rows[0]["title"] == title
+    assert rows[0]["description"] == description
+    assert rows[0]["filename"] == filename
+    assert json.loads(rows[0]["tags"]) == ['a"b', '标签,带逗号']
+    assert rows[1]["tags"] == "[]"
+    empty = client.get("/api/assets/export.csv", params={"include_tags": "missing"})
+    assert csv_rows(empty) == []
+    assert empty.content.decode("utf-8-sig").strip() == "uuid,title,description,filename,media_type,tags,created_at"
+    client.headers.pop("Authorization")
+    assert client.get("/api/assets/export.csv").status_code == 401
+
+
+def test_edits_refresh_queries_and_exports(catalog):
+    client, asset = catalog
+    uuid = asset(title="Oldneedle", description="Oldcaption", tags=("oldtag",), media="document")
+    base = f"/api/assets/{uuid}"
+    assert client.patch(base, json={"title": "Newneedle", "description": "Newcaption"}).status_code == 200
+    for term in ("oldneedle", "oldcaption"):
+        assert ids(client.get("/api/assets", params={"q": term})) == []
+        assert csv_rows(client.get("/api/assets/export.csv", params={"q": term})) == []
+    for term in ("newneedle", "newcaption"):
+        assert ids(client.get("/api/assets", params={"q": term})) == [uuid]
+        rows = csv_rows(client.get("/api/assets/export.csv", params={"q": term}))
+        assert rows[0]["title"] == "Newneedle"
+        assert rows[0]["description"] == "Newcaption"
+    assert client.post(base + "/tags", json={"name": " Newtag "}).status_code == 200
+    assert client.delete(base + "/tags/oldtag").status_code == 200
+    for params in ({"q": "newtag"}, {"include_tags": "newtag"}):
+        assert ids(client.get("/api/assets", params=params)) == [uuid]
+        assert json.loads(csv_rows(client.get("/api/assets/export.csv", params=params))[0]["tags"]) == ["newtag"]
+    for params in ({"q": "oldtag"}, {"include_tags": "oldtag"}, {"exclude_tags": "newtag"}):
+        assert ids(client.get("/api/assets", params=params)) == []
+        assert csv_rows(client.get("/api/assets/export.csv", params=params)) == []

@@ -127,6 +127,19 @@ button, input, select { font-family: inherit; font-size: inherit; }
 }
 .chip { background: var(--accent-dim); color: var(--accent); padding: 6px var(--s2); border-radius: 999px; font-size: 13px; cursor: pointer; }
 .chip::after { content: " \00d7"; }
+.chip { border: 1px solid var(--base-3); overflow-wrap: anywhere; }
+.filter-panel { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s2); background: var(--base-1); border: 1px solid var(--base-3); border-radius: var(--radius); padding: var(--s2); }
+.filter-panel label { display: flex; flex-direction: column; gap: 4px; min-width: 0; color: var(--muted); font-size: 13px; }
+.filter-panel input, .filter-panel select { width: 100%; min-width: 0; padding: var(--s1); border: 1px solid var(--base-3); border-radius: var(--radius-sm); background: var(--base-0); color: var(--text); }
+.tag-filter { display: flex; align-items: flex-end; gap: var(--s1); min-width: 0; }
+.tag-filter label { flex: 1; }
+.filter-summary, #active-filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); }
+.filter-summary { justify-content: space-between; margin: var(--s2) 0; }
+.pagination { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s3); }
+.facet-note { font-size: 12px; margin: 0; }
+#export-status { margin-bottom: var(--s2); overflow-wrap: anywhere; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* ---------- grid ---------- */
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--s3); }
@@ -225,4 +238,12 @@ button, input, select { font-family: inherit; font-size: inherit; }
   .topbar { grid-template-columns: 1fr; gap: var(--s2); }
   .layout { grid-template-columns: 1fr; }
   .sidebar { display: none; }
+  .content { padding: var(--s2); min-width: 0; }
+  .view-head, .view-controls { flex-wrap: wrap; }
+  .search-box input { min-width: 0; }
+  .topbar-right { flex-wrap: wrap; }
+}
+@media (max-width: 520px) {
+  .filter-panel { grid-template-columns: 1fr; }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: var(--s2); }
 }

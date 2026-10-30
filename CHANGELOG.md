@@ -8,6 +8,13 @@ semantic versioning.
 
 ### Added
 
+- Combined keyword, collection, media type, all-required tags and excluded tags
+  in the existing library, with removable filters and 24-item pagination.
+- Authenticated CSV export of every matching asset in list order, including
+  UTF-8 BOM, JSON tag arrays and proper CSV escaping.
+- Repeatable `python -m keepstack seed-quiz` acceptance data, API tests and
+  optional Playwright browser checks (also run in CI).
+
 - Parse common XMP RDF fields into structured metadata, catalog fields, and
   full-text search.
 - OCR images at ingest through the Tesseract binary when it is installed, so
@@ -30,6 +37,12 @@ semantic versioning.
   Tunable with `KEEPSTACK_LOGIN_MAX_ATTEMPTS` and `KEEPSTACK_LOGIN_LOCKOUT_SECONDS`.
 
 ### Changed
+
+- Keyword search now respects the selected sort, with asset ID tie-breaking.
+- Search and export share bound filter SQL; invalid pagination is rejected.
+- Library requests are cancelled and versioned on condition changes, with
+  loading, retry, empty and download-failure states; semantic UI is hidden.
+- JSON requests default to POST, fixing browser login and tag-add operations.
 
 - Switched the web interface to a light theme: white and soft-gray surfaces
   with an indigo accent, applied across the app, placeholders, and share pages.

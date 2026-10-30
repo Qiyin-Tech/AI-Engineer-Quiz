@@ -13,6 +13,10 @@ import uvicorn
 
 
 def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1] == "seed-quiz":
+        from .quiz_seed import run_seed
+        run_seed()
+        return
     if len(sys.argv) > 1 and sys.argv[1] == "seed":
         from .seed import run_seed
         run_seed()

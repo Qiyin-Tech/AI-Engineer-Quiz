@@ -30,11 +30,7 @@
         <strong>Keepstack</strong>
       </div>
       <div class="search-box">
-        <input id="search" placeholder="Search assets, tags, metadata...">
-        <select id="search-mode" title="Search mode">
-          <option value="keyword">Keyword</option>
-          <option value="semantic">Semantic</option>
-        </select>
+        <input id="search" aria-label="Search keywords" placeholder="Search assets, tags, metadata...">
       </div>
       <div class="topbar-right">
         <button id="btn-upload" class="btn btn-primary">Upload</button>
@@ -56,6 +52,7 @@
         </nav>
 
         <div id="facets" class="facets">
+          <p class="muted facet-note">Counts below cover all active assets.</p>
           <div class="facet-group">
             <h4>Media type</h4>
             <ul id="facet-media"></ul>
@@ -72,17 +69,42 @@
           <div class="view-head">
             <h2 id="result-title">Library</h2>
             <div class="view-controls">
-              <span id="active-filter" class="chip hidden"></span>
-              <select id="sort">
+              <select id="sort" aria-label="Sort assets">
                 <option value="newest">Newest</option>
                 <option value="oldest">Oldest</option>
                 <option value="name">Name</option>
                 <option value="largest">Largest</option>
               </select>
+              <button id="btn-export" class="btn btn-primary" disabled>Export all CSV</button>
             </div>
           </div>
-          <div id="grid" class="grid"></div>
-          <div id="empty" class="empty hidden">No assets yet. Click Upload to get started.</div>
+          <div class="filter-panel">
+            <label>Collection<select id="filter-collection"><option value="">All collections</option></select></label>
+            <label>Media type<select id="filter-media"><option value="">All media types</option></select></label>
+            <form id="include-form" class="tag-filter">
+              <label>Include every tag<input id="include-input" list="tag-options" placeholder="Full tag name"></label>
+              <button class="btn" type="submit">Include tag</button>
+            </form>
+            <form id="exclude-form" class="tag-filter">
+              <label>Exclude any tag<input id="exclude-input" list="tag-options" placeholder="Full tag name"></label>
+              <button class="btn" type="submit">Exclude tag</button>
+            </form>
+            <datalist id="tag-options"></datalist>
+          </div>
+          <div class="filter-summary">
+            <div id="active-filters" aria-label="Active filters"></div>
+            <button id="clear-filters" class="btn btn-ghost">Clear filters</button>
+          </div>
+          <p id="library-status" role="status" aria-live="polite"></p>
+          <div id="library-error" class="error hidden" role="alert">Could not load results. <button id="retry-library" class="btn">Retry</button></div>
+          <div id="export-status" role="status" aria-live="polite"></div>
+          <div id="grid" class="grid" aria-busy="false"></div>
+          <div id="empty" class="empty hidden">No matching assets. Try changing or clearing your filters.</div>
+          <nav class="pagination" aria-label="Result pages">
+            <button id="prev-page" class="btn" disabled>Previous</button>
+            <span id="page-info">0 matches</span>
+            <button id="next-page" class="btn" disabled>Next</button>
+          </nav>
         </div>
 
         <div id="view-collections" class="view hidden">

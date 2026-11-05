@@ -5,7 +5,7 @@
 - Fork：https://github.com/zhentaozhang/AI-Engineer-Quiz
 - 分支：`feature/quiz-search-export`
 - 基于：`3aa137c`（收到题目时的 `main`）
-- 最终 commit：见回复邮件与本文件所在 commit（`git log --oneline 3aa137c..HEAD`）
+- 最终实现 commit：`0a00fb1`（全部代码、测试、演示数据与文档）。分支 HEAD 另含一次仅记录本 SHA 的文档提交，完整 HEAD 以提交邮件为准。
 
 ## 2. 做了什么
 

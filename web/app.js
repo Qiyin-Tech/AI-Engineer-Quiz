@@ -2,16 +2,27 @@
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const state = { token: localStorage.getItem("keepstack_token"), user: null,
-  q: "", mode: "keyword", media: null, tag: null, sort: "newest", collection: null };
+  q: "", media: null, collection: null, includeTags: [], excludeTags: [],
+  sort: "newest", page: 1, pageSize: 12 };
 
 // ---------- API helper ----------
 async function api(path, opts = {}) {
   const headers = opts.headers || {};
   if (state.token) headers["Authorization"] = "Bearer " + state.token;
-  if (opts.json) { headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(opts.json); }
+  if (opts.json) {
+    headers["Content-Type"] = "application/json";
+    opts.body = JSON.stringify(opts.json);
+    // JSON payloads are writes; default to POST when the caller did not say.
+    if (!opts.method) opts.method = "POST";
+  }
   const res = await fetch(path, { ...opts, headers });
   if (res.status === 401) { logout(); throw new Error("unauthorised"); }
-  if (!res.ok) { const t = await res.text(); throw new Error(t || res.statusText); }
+  if (!res.ok) {
+    const raw = await res.text();
+    let message = raw || res.statusText;
+    try { message = JSON.parse(raw).detail || message; } catch { /* plain-text error */ }
+    throw new Error(message);
+  }
   return res.headers.get("content-type")?.includes("json") ? res.json() : res;
 }
 
@@ -41,6 +52,7 @@ function enterApp() {
   const isAdmin = state.user.role === "admin";
   $$(".admin-only").forEach(el => el.classList.toggle("hidden", !isAdmin));
   loadLibrary();
+  loadCollectionOptions();
 }
 
 // ---------- navigation ----------
@@ -58,45 +70,179 @@ $$(".nav-item").forEach(btn => btn.addEventListener("click", () => {
 
 // ---------- library / search ----------
 let searchTimer;
-$("#search").addEventListener("input", (e) => { state.q = e.target.value; clearTimeout(searchTimer); searchTimer = setTimeout(loadLibrary, 250); });
-$("#search-mode").addEventListener("change", (e) => { state.mode = e.target.value; loadLibrary(); });
-$("#sort").addEventListener("change", (e) => { state.sort = e.target.value; loadLibrary(); });
-$("#active-filter").addEventListener("click", () => { state.media = null; state.tag = null; state.collection = null; loadLibrary(); });
+let librarySeq = 0;
+let libraryAbort = null;
+
+$("#search").addEventListener("input", (e) => {
+  state.q = e.target.value;
+  state.page = 1;
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(loadLibrary, 250);
+});
+$("#sort").addEventListener("change", (e) => { state.sort = e.target.value; state.page = 1; loadLibrary(); });
+$("#filter-collection").addEventListener("change", (e) => {
+  state.collection = e.target.value || null; state.page = 1; loadLibrary();
+});
+$("#filter-include").addEventListener("change", applyTagInputs);
+$("#filter-exclude").addEventListener("change", applyTagInputs);
+["filter-include", "filter-exclude"].forEach(id => $("#" + id).addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { e.preventDefault(); e.target.blur(); }
+}));
+$("#filter-clear").addEventListener("click", () => {
+  state.media = null; state.collection = null;
+  state.includeTags = []; state.excludeTags = [];
+  state.q = ""; $("#search").value = ""; clearTimeout(searchTimer);
+  state.page = 1; syncFilterInputs(); loadLibrary();
+});
+$("#page-prev").addEventListener("click", () => { if (state.page > 1) { state.page -= 1; loadLibrary(); } });
+$("#page-next").addEventListener("click", () => { state.page += 1; loadLibrary(); });
+$("#btn-export").addEventListener("click", exportCsv);
+$("#btn-retry").addEventListener("click", loadLibrary);
+
+function parseTags(value) {
+  return [...new Set((value || "").split(",").map(t => t.trim().toLowerCase()).filter(Boolean))];
+}
+function applyTagInputs() {
+  state.includeTags = parseTags($("#filter-include").value);
+  state.excludeTags = parseTags($("#filter-exclude").value);
+  state.page = 1;
+  syncFilterInputs();
+  loadLibrary();
+}
+function syncFilterInputs() {
+  $("#filter-collection").value = state.collection || "";
+  $("#filter-include").value = state.includeTags.join(", ");
+  $("#filter-exclude").value = state.excludeTags.join(", ");
+}
+function libraryParams(paged = true) {
+  const p = new URLSearchParams();
+  if (state.q.trim()) p.set("q", state.q);
+  p.set("sort", state.sort);
+  if (state.media) p.set("media_type", state.media);
+  if (state.collection) p.set("collection_id", state.collection);
+  state.includeTags.forEach(t => p.append("include_tags", t));
+  state.excludeTags.forEach(t => p.append("exclude_tags", t));
+  if (paged) { p.set("page", state.page); p.set("page_size", state.pageSize); }
+  return p;
+}
 
 async function loadLibrary() {
-  const p = new URLSearchParams({ q: state.q, sort: state.sort, mode: state.mode, limit: "120" });
-  if (state.media) p.set("media_type", state.media);
-  if (state.tag) p.set("tag", state.tag);
-  if (state.collection) p.set("collection_id", state.collection);
-  const data = await api("/api/assets?" + p.toString());
-  renderFacets(data.facets);
-  renderGrid(data.items, data.total);
-  const filt = state.media || (state.tag ? "#" + state.tag : null) || (state.collection ? "collection" : null);
-  $("#active-filter").classList.toggle("hidden", !filt);
-  if (filt) $("#active-filter").textContent = filt;
+  // Abort the previous request and ignore stale responses: the last filter
+  // state the user picked always wins.
+  const seq = ++librarySeq;
+  if (libraryAbort) libraryAbort.abort();
+  libraryAbort = new AbortController();
+  try {
+    const data = await api("/api/assets?" + libraryParams().toString(),
+                           { signal: libraryAbort.signal });
+    if (seq !== librarySeq) return;
+    renderFacets(data.facets);
+    renderGrid(data.items, data.total);
+    renderPager(data);
+    renderActiveFilters();
+    $("#load-error").classList.add("hidden");
+  } catch (err) {
+    if (err.name === "AbortError" || seq !== librarySeq) return;
+    $("#grid").innerHTML = "";
+    $("#empty").classList.add("hidden");
+    $("#load-error").classList.remove("hidden");
+    $("#page-prev").disabled = true;
+    $("#page-next").disabled = true;
+    $("#page-info").textContent = "";
+    toast("Failed to load assets: " + (err.message || "unknown error"), "err");
+  }
 }
 
 function renderGrid(items, total) {
-  $("#result-title").textContent = state.q ? `Results (${total})` : `Library (${total})`;
+  $("#result-title").textContent = state.q.trim() ? `Results (${total})` : `Library (${total})`;
   $("#empty").classList.toggle("hidden", items.length > 0);
   $("#grid").innerHTML = items.map(a => `
     <div class="card" data-uuid="${a.uuid}">
       <img class="thumb" loading="lazy" src="/api/assets/${a.uuid}/thumb" alt="${esc(a.alt_text || a.title)}">
       <div class="meta">
         <span class="title" title="${esc(a.title)}">${esc(a.title)}</span>
-        <span class="sub"><span class="badge">${a.media_type}</span><span>${fmtBytes(a.size)}</span></span>
+        <span class="sub"><span class="badge">${esc(a.media_type)}</span><span>${fmtBytes(a.size)}</span></span>
       </div>
     </div>`).join("");
   $$("#grid .card").forEach(c => c.addEventListener("click", () => openAsset(c.dataset.uuid)));
 }
 
+function renderPager(data) {
+  const pages = data.pages || 0;
+  $("#page-prev").disabled = data.page <= 1;
+  $("#page-next").disabled = pages === 0 || data.page >= pages;
+  $("#page-info").textContent = data.total
+    ? `Page ${data.page} of ${pages} · ${data.total} match${data.total === 1 ? "" : "es"}`
+    : "No matches";
+}
+
 function renderFacets(facets) {
   $("#facet-media").innerHTML = (facets.media_types || []).map(m =>
-    `<li class="${state.media===m.value?'active':''}" data-media="${m.value}"><span>${m.value}</span><span class="count">${m.count}</span></li>`).join("");
+    `<li class="${state.media===m.value?'active':''}" data-media="${esc(m.value)}"><span>${esc(m.value)}</span><span class="count">${m.count}</span></li>`).join("");
   $("#facet-tags").innerHTML = (facets.tags || []).slice(0, 18).map(t =>
-    `<li class="${state.tag===t.value?'active':''}" data-tag="${esc(t.value)}"><span>${esc(t.value)}</span><span class="count">${t.count}</span></li>`).join("");
-  $$("#facet-media li").forEach(li => li.addEventListener("click", () => { state.media = state.media===li.dataset.media?null:li.dataset.media; loadLibrary(); }));
-  $$("#facet-tags li").forEach(li => li.addEventListener("click", () => { state.tag = state.tag===li.dataset.tag?null:li.dataset.tag; loadLibrary(); }));
+    `<li class="${state.includeTags.includes(t.value)?'active':''}" data-tag="${esc(t.value)}"><span>${esc(t.value)}</span><span class="count">${t.count}</span></li>`).join("");
+  $$("#facet-media li").forEach(li => li.addEventListener("click", () => {
+    state.media = state.media === li.dataset.media ? null : li.dataset.media;
+    state.page = 1; loadLibrary();
+  }));
+  $$("#facet-tags li").forEach(li => li.addEventListener("click", () => {
+    const tag = li.dataset.tag;
+    state.includeTags = state.includeTags.includes(tag)
+      ? state.includeTags.filter(t => t !== tag)
+      : [...state.includeTags, tag];
+    state.page = 1; syncFilterInputs(); loadLibrary();
+  }));
+}
+
+function renderActiveFilters() {
+  const chip = (kind, label, value = "") =>
+    `<button type="button" class="chip" data-kind="${kind}" data-value="${esc(value)}" aria-label="Remove filter ${esc(label)}">${esc(label)}</button>`;
+  const chips = [];
+  if (state.q.trim()) chips.push(chip("q", `search: ${state.q.trim()}`));
+  if (state.media) chips.push(chip("media", state.media));
+  if (state.collection) {
+    const opt = $("#filter-collection").selectedOptions[0];
+    chips.push(chip("collection", opt ? opt.textContent : "collection"));
+  }
+  state.includeTags.forEach(t => chips.push(chip("include", "+ " + t, t)));
+  state.excludeTags.forEach(t => chips.push(chip("exclude", "− " + t, t)));
+  const box = $("#active-filters");
+  box.innerHTML = chips.length ? chips.join("") : '<span class="muted">No filters applied</span>';
+  $$(".chip", box).forEach(el => el.addEventListener("click", () => {
+    const kind = el.dataset.kind, value = el.dataset.value;
+    if (kind === "q") { state.q = ""; $("#search").value = ""; clearTimeout(searchTimer); }
+    if (kind === "media") state.media = null;
+    if (kind === "collection") state.collection = null;
+    if (kind === "include") state.includeTags = state.includeTags.filter(t => t !== value);
+    if (kind === "exclude") state.excludeTags = state.excludeTags.filter(t => t !== value);
+    state.page = 1; syncFilterInputs(); loadLibrary();
+  }));
+}
+
+async function exportCsv() {
+  const btn = $("#btn-export");
+  btn.disabled = true;
+  try {
+    const res = await fetch("/api/assets/export.csv?" + libraryParams(false).toString(), {
+      headers: state.token ? { Authorization: "Bearer " + state.token } : {},
+    });
+    if (res.status === 401) { logout(); throw new Error("unauthorised"); }
+    if (!res.ok) throw new Error((await res.text()) || res.statusText);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "assets-export.csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast("CSV downloaded");
+  } catch (err) {
+    toast("Export failed: " + (err.message || "unknown error"), "err");
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // ---------- asset detail drawer ----------
@@ -123,7 +269,7 @@ async function openAsset(uuid) {
   $("#drawer-body").innerHTML = `
     ${preview}
     <h2 class="detail-title">${esc(a.title)}</h2>
-    <p class="muted">${a.media_type} &middot; ${a.ext?.toUpperCase()} &middot; ${fmtBytes(a.size)} ${a.width?`&middot; ${a.width}&times;${a.height}`:""}</p>
+    <p class="muted">${esc(a.media_type)} &middot; ${esc((a.ext || "").toUpperCase())} &middot; ${fmtBytes(a.size)} ${a.width?`&middot; ${a.width}&times;${a.height}`:""}</p>
     <div class="btn-row">
       <a class="btn" href="/api/assets/${uuid}/file" download>Download</a>
       ${canEdit?`<button class="btn" id="d-share">Create share link</button>`:""}
@@ -168,17 +314,17 @@ async function openAsset(uuid) {
       const body = {};
       ["title","description","alt_text","dc_creator","rights_statement","retention_until"].forEach(f => { const el = $("#e-"+f); if (el) body[f] = el.value; });
       await api("/api/assets/"+uuid, { method: "PATCH", json: body });
-      toast("Saved"); openAsset(uuid); loadLibrary();
+      toast("Saved"); state.page = 1; syncFilterInputs(); openAsset(uuid); loadLibrary();
     });
     $("#tag-add")?.addEventListener("keydown", async (e) => {
       if (e.key === "Enter" && e.target.value.trim()) {
         await api("/api/assets/"+uuid+"/tags", { json: { name: e.target.value.trim() } });
-        openAsset(uuid);
+        state.page = 1; openAsset(uuid); loadLibrary();
       }
     });
     $$("#tag-row .rm").forEach(rm => rm.addEventListener("click", async () => {
       await api("/api/assets/"+uuid+"/tags/"+encodeURIComponent(rm.dataset.tag), { method: "DELETE" });
-      openAsset(uuid);
+      state.page = 1; openAsset(uuid); loadLibrary();
     }));
     $("#d-share")?.addEventListener("click", async () => {
       const r = await api("/api/shares", { json: { target_type: "asset", target_id: a.id, permission: "download" } });
@@ -189,7 +335,7 @@ async function openAsset(uuid) {
   $("#d-delete")?.addEventListener("click", async () => {
     if (!confirm("Delete this asset?")) return;
     await api("/api/assets/"+uuid, { method: "DELETE" });
-    toast("Deleted"); closeDrawer(); loadLibrary();
+    toast("Deleted"); state.page = 1; closeDrawer(); loadLibrary();
   });
 }
 
@@ -222,13 +368,30 @@ async function uploadFiles(files) {
 }
 
 // ---------- collections ----------
+function renderCollectionOptions(collections) {
+  const select = $("#filter-collection");
+  const current = state.collection || "";
+  select.innerHTML = '<option value="">All collections</option>' +
+    collections.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
+  select.value = current;
+}
+
+async function loadCollectionOptions() {
+  try {
+    const data = await api("/api/collections");
+    renderCollectionOptions(data.collections);
+  } catch { /* the library still works without the dropdown */ }
+}
+
 async function loadCollections() {
   const data = await api("/api/collections");
+  renderCollectionOptions(data.collections);
   $("#collection-list").innerHTML = data.collections.map(c =>
     `<div class="collection-card" data-id="${c.id}"><span class="n">${esc(c.name)}</span><span class="muted">${c.asset_count} assets</span><span class="muted">${esc(c.description||"")}</span></div>`).join("")
     || '<p class="muted">No collections yet.</p>';
   $$("#collection-list .collection-card").forEach(card => card.addEventListener("click", () => {
-    state.collection = card.dataset.id; state.media = null; state.tag = null;
+    state.collection = card.dataset.id; state.media = null;
+    state.page = 1; syncFilterInputs();
     $$(".nav-item").forEach(b => b.classList.remove("active"));
     $('.nav-item[data-view="library"]').classList.add("active");
     $$(".view").forEach(v => v.classList.add("hidden")); $("#view-library").classList.remove("hidden");

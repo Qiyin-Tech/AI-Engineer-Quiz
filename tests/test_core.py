@@ -19,6 +19,7 @@ from PIL import Image  # noqa: E402
 from keepstack import ai, ingest, ocr, search, standards, storage, thumbnails, vision  # noqa: E402
 from keepstack.auth import (hash_password, make_token, role_at_least,  # noqa: E402
                          verify_password, verify_token)
+from keepstack.config import config  # noqa: E402
 from keepstack.db import get_conn, init_db  # noqa: E402
 
 
@@ -345,7 +346,8 @@ def test_local_clip_cross_modal_similarity():
     assert ai.cosine(tvec, pvec) > ai.cosine(tvec, cvec)
 
 
-@pytest.mark.skipif(not ocr.available(), reason="tesseract binary not installed")
+@pytest.mark.skipif(not (ocr.available() and config.ocr_enabled),
+                    reason="OCR is disabled or tesseract is not installed")
 def test_ocr_makes_image_text_searchable():
     from PIL import ImageDraw, ImageFont
     img = Image.new("RGB", (900, 240), (255, 255, 255))

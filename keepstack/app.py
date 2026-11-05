@@ -6,6 +6,7 @@ single-page web client is served from the ``web/`` directory at the root.
 """
 from __future__ import annotations
 
+import csv
 import io
 import ipaddress
 import json
@@ -15,7 +16,7 @@ from typing import Optional
 from fastapi import (Body, Depends, FastAPI, File, Form, HTTPException, Query,
                      Request, UploadFile)
 from fastapi.responses import (FileResponse, HTMLResponse, JSONResponse,
-                               PlainTextResponse, Response)
+                               PlainTextResponse, Response, StreamingResponse)
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__, ingest, search, standards, storage, thumbnails
@@ -178,16 +179,59 @@ def list_assets(
     q: str = "",
     media_type: Optional[str] = None,
     tag: Optional[str] = None,
+    include_tags: Optional[list[str]] = Query(None),
+    exclude_tags: Optional[list[str]] = Query(None),
     collection_id: Optional[int] = None,
-    status: str = "active",
     sort: str = "newest",
     mode: str = "keyword",
-    limit: int = Query(60, le=200),
-    offset: int = 0,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(search.PAGE_SIZE_DEFAULT, ge=1, le=search.PAGE_SIZE_MAX),
     user: dict = Depends(require_user),
 ):
-    return search.search(q=q, media_type=media_type, tag=tag, collection_id=collection_id,
-                         status=status, sort=sort, mode=mode, limit=limit, offset=offset)
+    # The quiz contract is "active assets only"; status is not client-selectable.
+    return search.search(q=q, media_type=media_type, tag=tag,
+                         include_tags=include_tags, exclude_tags=exclude_tags,
+                         collection_id=collection_id, status="active", sort=sort,
+                         mode=mode, page=page, page_size=page_size)
+
+
+@app.get("/api/assets/export.csv")
+def export_assets_csv(
+    q: str = "",
+    media_type: Optional[str] = None,
+    tag: Optional[str] = None,
+    include_tags: Optional[list[str]] = Query(None),
+    exclude_tags: Optional[list[str]] = Query(None),
+    collection_id: Optional[int] = None,
+    sort: str = "newest",
+    user: dict = Depends(require_user),
+):
+    """Export every asset matching the current filters (not just one page)."""
+
+    def generate():
+        buf = io.StringIO()
+        buf.write("\ufeff")  # UTF-8 BOM so Excel opens Chinese text correctly.
+        writer = csv.writer(buf)
+        writer.writerow(search.EXPORT_COLUMNS)
+        yield buf.getvalue()
+        buf.seek(0)
+        buf.truncate(0)
+        for row in search.iter_export(q=q, media_type=media_type, tag=tag,
+                                      include_tags=include_tags,
+                                      exclude_tags=exclude_tags,
+                                      collection_id=collection_id, status="active",
+                                      sort=sort):
+            writer.writerow([row[column] for column in search.EXPORT_COLUMNS])
+            yield buf.getvalue()
+            buf.seek(0)
+            buf.truncate(0)
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="assets-export.csv"'},
+    )
+
 
 
 def _get_asset_or_404(uuid: str) -> dict:

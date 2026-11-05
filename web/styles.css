@@ -125,8 +125,23 @@ button, input, select { font-family: inherit; font-size: inherit; }
   border: 1px solid var(--base-3); color: var(--text); border-radius: var(--radius-sm);
   padding: var(--s1) var(--s4) var(--s1) var(--s2); appearance: none; -webkit-appearance: none; cursor: pointer;
 }
-.chip { background: var(--accent-dim); color: var(--accent); padding: 6px var(--s2); border-radius: 999px; font-size: 13px; cursor: pointer; }
+.chip { background: var(--accent-dim); color: var(--accent); padding: 6px var(--s2); border: 0; border-radius: 999px; font: inherit; font-size: 13px; cursor: pointer; }
 .chip::after { content: " \00d7"; }
+.chip:focus-visible, .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.facet-group h4 .facet-note { text-transform: none; letter-spacing: 0; font-weight: 400; }
+
+/* ---------- filters / pagination ---------- */
+.filter-bar { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: flex-end; margin-bottom: var(--s2); }
+.filter-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.filter-field input, .filter-field select {
+  background: var(--base-1); border: 1px solid var(--base-3); color: var(--text);
+  padding: var(--s1) var(--s2); border-radius: var(--radius-sm); min-width: 180px;
+}
+.filter-field select { padding-right: var(--s4); }
+.chip-row { display: flex; flex-wrap: wrap; gap: var(--s1); align-items: center; margin-bottom: var(--s3); min-height: 30px; }
+.chip-row .muted { font-size: 13px; }
+.pager { display: flex; align-items: center; justify-content: center; gap: var(--s2); padding: var(--s3) 0; }
+.pager .btn:disabled { opacity: .45; cursor: default; }
 
 /* ---------- grid ---------- */
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--s3); }

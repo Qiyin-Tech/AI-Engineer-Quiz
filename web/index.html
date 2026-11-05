@@ -31,10 +31,6 @@
       </div>
       <div class="search-box">
         <input id="search" placeholder="Search assets, tags, metadata...">
-        <select id="search-mode" title="Search mode">
-          <option value="keyword">Keyword</option>
-          <option value="semantic">Semantic</option>
-        </select>
       </div>
       <div class="topbar-right">
         <button id="btn-upload" class="btn btn-primary">Upload</button>
@@ -72,17 +68,41 @@
           <div class="view-head">
             <h2 id="result-title">Library</h2>
             <div class="view-controls">
-              <span id="active-filter" class="chip hidden"></span>
               <select id="sort">
-                <option value="newest">Newest</option>
-                <option value="oldest">Oldest</option>
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
                 <option value="name">Name</option>
                 <option value="largest">Largest</option>
               </select>
+              <button id="btn-export" class="btn">Export CSV</button>
             </div>
           </div>
+
+          <div class="filter-bar">
+            <label class="filter-field">Collection
+              <select id="filter-collection"><option value="">All collections</option></select>
+            </label>
+            <label class="filter-field">Include tags
+              <input id="filter-include" placeholder="approved, campaign">
+            </label>
+            <label class="filter-field">Exclude tags
+              <input id="filter-exclude" placeholder="internal">
+            </label>
+            <button id="filter-clear" class="btn btn-ghost">Clear all</button>
+          </div>
+
+          <div id="active-filters" class="chip-row"></div>
+
           <div id="grid" class="grid"></div>
-          <div id="empty" class="empty hidden">No assets yet. Click Upload to get started.</div>
+          <div id="empty" class="empty hidden">No assets match these filters.</div>
+          <div id="load-error" class="empty hidden">
+            Could not load assets. <button id="btn-retry" class="btn">Retry</button>
+          </div>
+          <div class="pager">
+            <button id="page-prev" class="btn" disabled>Previous</button>
+            <span id="page-info" class="muted"></span>
+            <button id="page-next" class="btn" disabled>Next</button>
+          </div>
         </div>
 
         <div id="view-collections" class="view hidden">

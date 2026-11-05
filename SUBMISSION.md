@@ -5,7 +5,7 @@
 - Fork：https://github.com/zhentaozhang/AI-Engineer-Quiz
 - 分支：`feature/quiz-search-export`
 - 基于：`3aa137c`（收到题目时的 `main`）
-- 最终实现 commit：`0a00fb1`（全部代码、测试、演示数据与文档）。分支 HEAD 另含一次仅记录本 SHA 的文档提交，完整 HEAD 以提交邮件为准。
+- 最终实现 commit：`1f8466e`（全部代码、测试、演示数据与文档）。分支 HEAD 另含一次仅记录本 SHA 的文档提交，完整 HEAD 以提交邮件为准。
 
 ## 2. 做了什么
 
@@ -227,6 +227,10 @@ uuid,title,description,filename,media_type,tags,created_at
 
 ## 8. Commit 历史
 
+完整历史见 `git log --oneline 3aa137c..HEAD`。按要求未 squash / amend / rebase，后续修正均使用新 commit。
+
+关键节点：
+
 ```text
 docs: add design and implementation plan for search and export
 test: add acceptance tests for combined filters, stable pagination and CSV export
@@ -234,7 +238,10 @@ feat: implement combined filters, stable pagination and CSV export
 feat: add filtering, pagination and CSV export to the web client
 test: add reproducible quiz demo dataset generator
 fix: skip the OCR test when OCR is disabled, matching the documented run setup
-docs: add SUBMISSION.md with verification results
+fix: force active-only results and sharpen list/export coverage
+fix: surface keyword filter, refresh after edits, and handle export 401
+test: cover status changes, tag-removal reindex and pagination boundaries
+feat: improve filter accessibility and safe rendering in the web client
+docs: add reviewer quick-verification guide and requirement-to-test matrix
+docs: record the final implementation commit SHA
 ```
-
-按要求未 squash / amend / rebase；后续修正使用新 commit。

@@ -14,7 +14,7 @@ import uuid as uuidlib
 
 import pytest
 
-os.environ.setdefault("KEEPSTACK_DATA_DIR", tempfile.mkdtemp(prefix="keepstack-quiz-test-"))
+os.environ["KEEPSTACK_DATA_DIR"] = tempfile.mkdtemp(prefix="keepstack-quiz-test-")
 os.environ["KEEPSTACK_AI_ENABLED"] = "false"
 
 from fastapi.testclient import TestClient  # noqa: E402
@@ -110,6 +110,20 @@ def _client() -> TestClient:
 def _csv_rows(response) -> list[list[str]]:
     text = response.content.decode("utf-8-sig")
     return list(csv.reader(io.StringIO(text)))
+
+
+def _negative_fixture_set(cid: int) -> tuple[int, int]:
+    """One true match plus one asset for every filter that must reject it."""
+    match = _asset(title="Harbor match", tags=("approved", "campaign"), collection_id=cid)
+    _asset(title="Harbor approved only", tags=("approved",), collection_id=cid)
+    _asset(title="Harbor campaign only", tags=("campaign",), collection_id=cid)
+    _asset(title="Harbor internal", tags=("approved", "campaign", "internal"),
+           collection_id=cid)
+    _asset(title="Harbor document", tags=("approved", "campaign"), collection_id=cid,
+           media_type="document")
+    deleted = _asset(title="Harbor deleted", tags=("approved", "campaign"),
+                     collection_id=cid, status="deleted")
+    return match, deleted
 
 
 # ---------------------------------------------------------------------------
@@ -318,7 +332,7 @@ def test_export_handles_chinese_commas_quotes_and_newlines():
     title = 'Harbor, "quoted"\nsecond line'
     description = "港口，中文素材，含逗号"
     _asset(title=title, description=description, filename="harbor,file.jpg",
-           tags=("approved", "campaign"), collection_id=cid)
+           tags=("campaign", "approved"), collection_id=cid)
 
     resp = _client().get(
         "/api/assets/export.csv",
@@ -327,17 +341,21 @@ def test_export_handles_chinese_commas_quotes_and_newlines():
     )
     rows = _csv_rows(resp)
 
+    assert resp.content.startswith(b"\xef\xbb\xbf")
+    assert b"\r\n" in resp.content
     assert rows[0] == CSV_HEADER
     assert rows[1][1] == title
     assert rows[1][2] == description
     assert rows[1][3] == "harbor,file.jpg"
     assert rows[1][4] == "image"
+    # Tags are stored/inserted in reverse order to prove the export sorts them.
     assert rows[1][5] == "approved|campaign"
     assert rows[1][6].startswith("2026-01-01")
 
 
 def test_export_with_zero_results_still_has_header():
     cid = _collection()
+    _asset(title="Harbor present", tags=("approved",), collection_id=cid)
     resp = _client().get(
         "/api/assets/export.csv",
         params={"collection_id": cid, "include_tags": "does-not-exist"},
@@ -345,6 +363,80 @@ def test_export_with_zero_results_still_has_header():
     )
     rows = _csv_rows(resp)
     assert rows == [CSV_HEADER]
+
+
+def test_export_applies_every_filter():
+    cid = _collection()
+    match, deleted = _negative_fixture_set(cid)
+    match_uuid = get_conn().execute(
+        "SELECT uuid FROM assets WHERE id = ?", (match,)).fetchone()["uuid"]
+    deleted_uuid = get_conn().execute(
+        "SELECT uuid FROM assets WHERE id = ?", (deleted,)).fetchone()["uuid"]
+
+    resp = _client().get(
+        "/api/assets/export.csv",
+        params=[("collection_id", str(cid)), ("q", "harbor"),
+                ("include_tags", "approved"), ("include_tags", "campaign"),
+                ("exclude_tags", "internal"), ("media_type", "image")],
+        headers=_auth_headers(),
+    )
+    exported = [row["uuid"] for row in
+                csv.DictReader(io.StringIO(resp.content.decode("utf-8-sig")))]
+    assert exported == [match_uuid]
+
+    # A client-supplied status must not widen the export beyond active assets.
+    resp = _client().get(
+        "/api/assets/export.csv",
+        params={"collection_id": cid, "status": "deleted"},
+        headers=_auth_headers(),
+    )
+    exported = [row["uuid"] for row in
+                csv.DictReader(io.StringIO(resp.content.decode("utf-8-sig")))]
+    assert match_uuid in exported
+    assert deleted_uuid not in exported
+
+
+def test_list_route_applies_filters_and_reports_pagination():
+    cid = _collection()
+    match, _ = _negative_fixture_set(cid)
+
+    resp = _client().get(
+        "/api/assets",
+        params=[("collection_id", str(cid)), ("q", "harbor"),
+                ("include_tags", "approved"), ("include_tags", "campaign"),
+                ("exclude_tags", "internal"), ("media_type", "image"),
+                ("page", "1"), ("page_size", "5")],
+        headers=_auth_headers(),
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert [item["id"] for item in data["items"]] == [match]
+    assert data["total"] == 1
+    assert data["page"] == 1
+    assert data["page_size"] == 5
+    assert data["pages"] == 1
+
+
+def test_status_parameter_cannot_expose_inactive_assets():
+    cid = _collection()
+    active = _asset(title="Harbor active", tags=("approved",), collection_id=cid)
+    _asset(title="Harbor pending", tags=("approved",), collection_id=cid, status="pending")
+    _asset(title="Harbor deleted", tags=("approved",), collection_id=cid, status="deleted")
+
+    data = _client().get(
+        "/api/assets",
+        params={"collection_id": cid, "status": "deleted"},
+        headers=_auth_headers(),
+    ).json()
+    assert [item["id"] for item in data["items"]] == [active]
+
+    rows = list(csv.DictReader(io.StringIO(_client().get(
+        "/api/assets/export.csv",
+        params={"collection_id": cid, "status": "deleted"},
+        headers=_auth_headers(),
+    ).content.decode("utf-8-sig"))))
+    assert len(rows) == 1
 
 
 def test_export_requires_authentication():
@@ -366,13 +458,17 @@ def test_edit_title_description_and_tags_are_visible_to_query_and_export():
 
     resp = client.patch(
         f"/api/assets/{asset_uuid}",
-        json={"title": "Harbor Needle", "description": "更新后的描述"},
+        json={"title": "Harbor Needle", "description": "更新后的描述 lagoonneedle"},
         headers=headers,
     )
     assert resp.status_code == 200
 
     found = search.search(q="needle", collection_id=cid)
     assert _ids(found) == [asset_id]
+
+    # The description change must also reach the FTS index.
+    by_description = search.search(q="lagoonneedle", collection_id=cid)
+    assert _ids(by_description) == [asset_id]
 
     added = client.post(f"/api/assets/{asset_uuid}/tags", json={"name": "Campaign"},
                         headers=headers)
@@ -395,7 +491,7 @@ def test_edit_title_description_and_tags_are_visible_to_query_and_export():
     rows = list(csv.DictReader(io.StringIO(exported.content.decode("utf-8-sig"))))
     assert len(rows) == 1
     assert rows[0]["title"] == "Harbor Needle"
-    assert rows[0]["description"] == "更新后的描述"
+    assert rows[0]["description"] == "更新后的描述 lagoonneedle"
     assert rows[0]["tags"] == "approved"
 
 

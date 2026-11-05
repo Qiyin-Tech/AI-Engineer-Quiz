@@ -182,16 +182,16 @@ def list_assets(
     include_tags: Optional[list[str]] = Query(None),
     exclude_tags: Optional[list[str]] = Query(None),
     collection_id: Optional[int] = None,
-    status: str = "active",
     sort: str = "newest",
     mode: str = "keyword",
     page: int = Query(1, ge=1),
     page_size: int = Query(search.PAGE_SIZE_DEFAULT, ge=1, le=search.PAGE_SIZE_MAX),
     user: dict = Depends(require_user),
 ):
+    # The quiz contract is "active assets only"; status is not client-selectable.
     return search.search(q=q, media_type=media_type, tag=tag,
                          include_tags=include_tags, exclude_tags=exclude_tags,
-                         collection_id=collection_id, status=status, sort=sort,
+                         collection_id=collection_id, status="active", sort=sort,
                          mode=mode, page=page, page_size=page_size)
 
 
@@ -203,7 +203,6 @@ def export_assets_csv(
     include_tags: Optional[list[str]] = Query(None),
     exclude_tags: Optional[list[str]] = Query(None),
     collection_id: Optional[int] = None,
-    status: str = "active",
     sort: str = "newest",
     user: dict = Depends(require_user),
 ):
@@ -220,7 +219,7 @@ def export_assets_csv(
         for row in search.iter_export(q=q, media_type=media_type, tag=tag,
                                       include_tags=include_tags,
                                       exclude_tags=exclude_tags,
-                                      collection_id=collection_id, status=status,
+                                      collection_id=collection_id, status="active",
                                       sort=sort):
             writer.writerow([row[column] for column in search.EXPORT_COLUMNS])
             yield buf.getvalue()

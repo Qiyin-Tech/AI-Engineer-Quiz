@@ -86,6 +86,7 @@ $("#filter-exclude").addEventListener("change", applyTagInputs);
 $("#filter-clear").addEventListener("click", () => {
   state.media = null; state.collection = null;
   state.includeTags = []; state.excludeTags = [];
+  state.q = ""; $("#search").value = ""; clearTimeout(searchTimer);
   state.page = 1; syncFilterInputs(); loadLibrary();
 });
 $("#page-prev").addEventListener("click", () => { if (state.page > 1) { state.page -= 1; loadLibrary(); } });
@@ -192,6 +193,7 @@ function renderActiveFilters() {
   const chip = (kind, label, value = "") =>
     `<span class="chip" data-kind="${kind}" data-value="${esc(value)}">${esc(label)}</span>`;
   const chips = [];
+  if (state.q.trim()) chips.push(chip("q", `search: ${state.q.trim()}`));
   if (state.media) chips.push(chip("media", state.media));
   if (state.collection) {
     const opt = $("#filter-collection").selectedOptions[0];
@@ -203,6 +205,7 @@ function renderActiveFilters() {
   box.innerHTML = chips.length ? chips.join("") : '<span class="muted">No filters applied</span>';
   $$(".chip", box).forEach(el => el.addEventListener("click", () => {
     const kind = el.dataset.kind, value = el.dataset.value;
+    if (kind === "q") { state.q = ""; $("#search").value = ""; clearTimeout(searchTimer); }
     if (kind === "media") state.media = null;
     if (kind === "collection") state.collection = null;
     if (kind === "include") state.includeTags = state.includeTags.filter(t => t !== value);
@@ -218,6 +221,7 @@ async function exportCsv() {
     const res = await fetch("/api/assets/export.csv?" + libraryParams(false).toString(), {
       headers: state.token ? { Authorization: "Bearer " + state.token } : {},
     });
+    if (res.status === 401) { logout(); throw new Error("unauthorised"); }
     if (!res.ok) throw new Error((await res.text()) || res.statusText);
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
@@ -227,7 +231,7 @@ async function exportCsv() {
     document.body.appendChild(a);
     a.click();
     a.remove();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
     toast("CSV downloaded");
   } catch (err) {
     toast("Export failed: " + (err.message || "unknown error"), "err");
@@ -305,17 +309,17 @@ async function openAsset(uuid) {
       const body = {};
       ["title","description","alt_text","dc_creator","rights_statement","retention_until"].forEach(f => { const el = $("#e-"+f); if (el) body[f] = el.value; });
       await api("/api/assets/"+uuid, { method: "PATCH", json: body });
-      toast("Saved"); openAsset(uuid); loadLibrary();
+      toast("Saved"); state.page = 1; syncFilterInputs(); openAsset(uuid); loadLibrary();
     });
     $("#tag-add")?.addEventListener("keydown", async (e) => {
       if (e.key === "Enter" && e.target.value.trim()) {
         await api("/api/assets/"+uuid+"/tags", { json: { name: e.target.value.trim() } });
-        openAsset(uuid);
+        state.page = 1; openAsset(uuid); loadLibrary();
       }
     });
     $$("#tag-row .rm").forEach(rm => rm.addEventListener("click", async () => {
       await api("/api/assets/"+uuid+"/tags/"+encodeURIComponent(rm.dataset.tag), { method: "DELETE" });
-      openAsset(uuid);
+      state.page = 1; openAsset(uuid); loadLibrary();
     }));
     $("#d-share")?.addEventListener("click", async () => {
       const r = await api("/api/shares", { json: { target_type: "asset", target_id: a.id, permission: "download" } });
@@ -326,7 +330,7 @@ async function openAsset(uuid) {
   $("#d-delete")?.addEventListener("click", async () => {
     if (!confirm("Delete this asset?")) return;
     await api("/api/assets/"+uuid, { method: "DELETE" });
-    toast("Deleted"); closeDrawer(); loadLibrary();
+    toast("Deleted"); state.page = 1; closeDrawer(); loadLibrary();
   });
 }
 

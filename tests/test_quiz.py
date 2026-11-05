@@ -495,6 +495,91 @@ def test_edit_title_description_and_tags_are_visible_to_query_and_export():
     assert rows[0]["tags"] == "approved"
 
 
+def test_status_change_through_patch_hides_asset_from_list_and_export():
+    cid = _collection()
+    asset_id = _asset(title="Harbor archive", tags=("approved",), collection_id=cid)
+    asset_uuid = get_conn().execute(
+        "SELECT uuid FROM assets WHERE id = ?", (asset_id,)).fetchone()["uuid"]
+    client = _client()
+    headers = _auth_headers()
+
+    resp = client.patch(f"/api/assets/{asset_uuid}", json={"status": "deleted"},
+                        headers=headers)
+    assert resp.status_code == 200
+
+    data = client.get("/api/assets", params={"collection_id": cid, "q": "harbor"},
+                      headers=headers).json()
+    assert data["total"] == 0
+
+    exported = client.get("/api/assets/export.csv",
+                          params={"collection_id": cid, "q": "harbor"},
+                          headers=headers)
+    rows = list(csv.DictReader(io.StringIO(exported.content.decode("utf-8-sig"))))
+    assert rows == []
+
+
+def test_removing_tag_removes_it_from_keyword_search_and_export():
+    cid = _collection()
+    asset_id = _asset(title="Untitled", tags=("zebra",), collection_id=cid)
+    asset_uuid = get_conn().execute(
+        "SELECT uuid FROM assets WHERE id = ?", (asset_id,)).fetchone()["uuid"]
+    client = _client()
+    headers = _auth_headers()
+
+    assert search.search(q="zebra", collection_id=cid)["total"] == 1
+    assert client.delete(f"/api/assets/{asset_uuid}/tags/zebra",
+                         headers=headers).status_code == 200
+    assert search.search(q="zebra", collection_id=cid)["total"] == 0
+
+    exported = client.get("/api/assets/export.csv",
+                          params={"collection_id": cid, "q": "zebra"},
+                          headers=headers)
+    assert list(csv.DictReader(io.StringIO(
+        exported.content.decode("utf-8-sig")))) == []
+
+
+def test_page_size_default_and_upper_bound():
+    cid = _collection()
+    for i in range(2):
+        _asset(title=f"Harbor {i}", collection_id=cid)
+    client = _client()
+    headers = _auth_headers()
+
+    default = client.get("/api/assets", params={"collection_id": cid},
+                         headers=headers).json()
+    assert default["page_size"] == 12
+
+    upper = client.get("/api/assets", params={"collection_id": cid, "page_size": 100},
+                       headers=headers).json()
+    assert upper["page_size"] == 100
+
+
+def test_empty_tag_parameters_are_ignored():
+    cid = _collection()
+    for i in range(2):
+        _asset(title=f"Harbor {i}", collection_id=cid)
+    data = _client().get(
+        "/api/assets",
+        params=[("collection_id", str(cid)), ("include_tags", ""),
+                ("exclude_tags", "   ")],
+        headers=_auth_headers(),
+    ).json()
+    assert data["total"] == 2
+
+
+def test_unknown_sort_falls_back_to_newest():
+    cid = _collection()
+    old = _asset(title="Harbor old", collection_id=cid,
+                 created_at="2026-01-01T00:00:00Z")
+    new = _asset(title="Harbor new", collection_id=cid,
+                 created_at="2026-02-01T00:00:00Z")
+
+    data = _client().get("/api/assets",
+                         params={"collection_id": cid, "sort": "bogus"},
+                         headers=_auth_headers()).json()
+    assert [item["id"] for item in data["items"]] == [new, old]
+
+
 # ---------------------------------------------------------------------------
 # 5. Bad input / special characters
 # ---------------------------------------------------------------------------

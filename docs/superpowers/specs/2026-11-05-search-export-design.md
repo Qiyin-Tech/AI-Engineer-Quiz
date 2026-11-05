@@ -70,7 +70,8 @@ a.id NOT IN (SELECT at.asset_id FROM asset_tags at JOIN tags t ON t.id = at.tag_
 | `sort` | str | `newest` | `newest`/`oldest`/`name`/`largest`，非法值回落 `newest` |
 | `page` | int | `1` | `>=1`，否则 422 |
 | `page_size` | int | `12` | `1..100`，否则 422 |
-| `status` | str | `active` | 保留参数，UI 不暴露 |
+
+两个路由都**强制** `status='active'`，不接受客户端覆盖（`?status=deleted` 会被忽略）。
 
 响应在原有字段上增加 `page`、`page_size`、`pages`。
 

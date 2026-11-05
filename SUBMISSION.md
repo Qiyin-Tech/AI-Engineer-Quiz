@@ -15,15 +15,25 @@
 | 排序 | `newest` / `oldest` 按 `created_at`，并以 `id` 作为稳定次级排序键；关键词存在时也遵守所选排序 |
 | 分页 | `GET /api/assets` 新增 `page`、`page_size`（默认 12，最大 100），响应增加 `page`、`page_size`、`pages`、`total` |
 | CSV 导出 | `GET /api/assets/export.csv`，与列表同筛选/同排序，导出全部匹配项；UTF-8 BOM；`csv.writer` 处理逗号、引号、换行、中文；零结果仍输出表头；沿用 Bearer 鉴权 |
-| 前端 | 集合下拉、include/exclude 标签输入、生效条件 chips、上一页/下一页与总数、带鉴权下载；筛选/排序变更回到第 1 页；请求竞态用 AbortController + 序号处理 |
+| 前端 | 集合下拉、include/exclude 标签输入、生效条件 chips（含关键词）、上一页/下一页与总数、带鉴权下载；筛选/排序变更回到第 1 页；请求竞态用 AbortController + 序号处理 |
 | 修改后可见 | 复用现有 PATCH 资产、增删标签入口；`reindex_fts()` 已在这些入口调用，新增测试固化该行为 |
-| 测试 | `tests/test_quiz.py` 21 条验收测试；`scripts/seed_quiz_data.py` 可复现演示数据 |
+| 测试 | `tests/test_quiz.py` 24 条验收测试；`scripts/seed_quiz_data.py` 可复现演示数据 |
+
+两个列表/导出路由都强制 `status='active'`，客户端传 `?status=deleted` 会被忽略，不能绕过“只返回 active 素材”。
 
 ### 顺带修复的既有缺陷
 
 1. **集合/单标签筛选永远返回 0 条**：`search()` 把 `JOIN` 中的占位符排在 `WHERE` 之前，但参数列表先放了 `status`，参数错位。新实现改用 `EXISTS` / `IN` 子查询，消除该类问题。
 2. **网页登录按钮不可用**：`web/app.js::api()` 在传 `json` 时未设置 `method`，`fetch` 以 GET 携带 body 直接抛 `TypeError`，请求根本到不了后端。已改为 JSON 请求默认 POST。
 3. **按 README 关闭 OCR 后测试失败**：OCR 测试只判断 `tesseract` 是否存在，未判断 `config.ocr_enabled`。已让 skip 条件同时检查开关（测试修复，不改业务逻辑）。
+
+### 代码评审后的修正
+
+- 列表与导出路由强制 `status='active'`，关闭 `?status=` 绕过。
+- 补充有区分度的导出反向用例与 HTTP 层列表契约测试。
+- 关键词纳入生效条件 chips，“Clear all” 同时清空搜索框与待执行的 debounce。
+- 标签增删/资产编辑后刷新列表并重置页码；导出遇到 401 走统一登出；Blob URL 延迟释放。
+- 测试强化：CSV BOM/CRLF、标签排序（反向插入）、描述字段的 FTS 重建。
 
 ## 3. 运行与验证
 
@@ -63,8 +73,8 @@ uv run --no-sync python -m pytest -q
 
 | 环境 | 结果 |
 | --- | --- |
-| OCR 关闭（README 推荐） | **43 passed, 2 skipped** |
-| OCR 开启 | **44 passed, 1 skipped** |
+| OCR 关闭（README 推荐） | **46 passed, 2 skipped** |
+| OCR 开启 | **47 passed, 1 skipped** |
 
 跳过项为需要本地视觉模型 / tesseract 的可选测试。
 
@@ -79,8 +89,11 @@ uv run --no-sync python -m pytest -q
 - `test_pagination_multi_page_has_no_duplicates_or_gaps`、`test_page_beyond_last_is_empty_but_reports_total`。
 - `test_identical_created_at_is_stable_across_pages`：相同时间戳跨页无重复/遗漏。
 - `test_export_matches_paged_list_order_and_filters`：导出与逐页列表的 uuid 顺序完全一致。
-- `test_export_handles_chinese_commas_quotes_and_newlines`、`test_export_with_zero_results_still_has_header`、`test_export_requires_authentication`。
-- `test_edit_title_description_and_tags_are_visible_to_query_and_export`：PATCH 与增删标签后，查询和导出同步。
+- `test_export_applies_every_filter`：用反向用例（缺 campaign、含 internal、document 类型、deleted）证明每个筛选都真正作用于导出。
+- `test_list_route_applies_filters_and_reports_pagination`：HTTP 层验证 `/api/assets` 的筛选与 `page/page_size/pages/total`。
+- `test_status_parameter_cannot_expose_inactive_assets`：`?status=deleted` 不能绕过 active 约束。
+- `test_export_handles_chinese_commas_quotes_and_newlines`（含 BOM、CRLF、标签排序）、`test_export_with_zero_results_still_has_header`、`test_export_requires_authentication`。
+- `test_edit_title_description_and_tags_are_visible_to_query_and_export`：PATCH 标题/描述与增删标签后，查询和导出同步（描述用独立词验证 FTS 重建）。
 - `test_illegal_pagination_parameters_are_rejected`、`test_special_character_keywords_do_not_break_search`。
 
 ### 手工验收（实测）
@@ -91,7 +104,7 @@ uv run --no-sync python -m pytest -q
 2. Include tags 填 `approved, campaign`；
 3. Exclude tags 填 `internal`；
 4. 搜索框输入 `harbor`；
-5. 页面显示 **15 matches / 2 页**（第 1 页 12 条，第 2 页 3 条），生效条件 chips 为 `Harbor Campaign`、`+ approved`、`+ campaign`、`− internal`；
+5. 页面显示 **15 matches / 2 页**（第 1 页 12 条，第 2 页 3 条），生效条件 chips 为 `search: harbor`、`Harbor Campaign`、`+ approved`、`+ campaign`、`− internal`；
 6. 点击 **Export CSV**，下载文件为 **1 行表头 + 15 行数据**，`tags` 形如 `approved|campaign`。
 
 已用浏览器实际走查上述步骤并通过；导出接口在浏览器上下文带 Bearer token 返回 `200`、`text/csv; charset=utf-8`。

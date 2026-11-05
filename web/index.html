@@ -53,11 +53,11 @@
 
         <div id="facets" class="facets">
           <div class="facet-group">
-            <h4>Media type</h4>
+            <h4>Media type <span class="facet-note">(all assets)</span></h4>
             <ul id="facet-media"></ul>
           </div>
           <div class="facet-group">
-            <h4>Top tags</h4>
+            <h4>Top tags <span class="facet-note">(all assets)</span></h4>
             <ul id="facet-tags"></ul>
           </div>
         </div>
@@ -74,7 +74,7 @@
                 <option value="name">Name</option>
                 <option value="largest">Largest</option>
               </select>
-              <button id="btn-export" class="btn">Export CSV</button>
+              <button id="btn-export" class="btn" aria-label="Export all matching assets to CSV">Export CSV</button>
             </div>
           </div>
 
@@ -99,9 +99,9 @@
             Could not load assets. <button id="btn-retry" class="btn">Retry</button>
           </div>
           <div class="pager">
-            <button id="page-prev" class="btn" disabled>Previous</button>
-            <span id="page-info" class="muted"></span>
-            <button id="page-next" class="btn" disabled>Next</button>
+            <button id="page-prev" class="btn" aria-label="Previous page" disabled>Previous</button>
+            <span id="page-info" class="muted" aria-live="polite"></span>
+            <button id="page-next" class="btn" aria-label="Next page" disabled>Next</button>
           </div>
         </div>
 

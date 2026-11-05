@@ -17,7 +17,12 @@ async function api(path, opts = {}) {
   }
   const res = await fetch(path, { ...opts, headers });
   if (res.status === 401) { logout(); throw new Error("unauthorised"); }
-  if (!res.ok) { const t = await res.text(); throw new Error(t || res.statusText); }
+  if (!res.ok) {
+    const raw = await res.text();
+    let message = raw || res.statusText;
+    try { message = JSON.parse(raw).detail || message; } catch { /* plain-text error */ }
+    throw new Error(message);
+  }
   return res.headers.get("content-type")?.includes("json") ? res.json() : res;
 }
 
@@ -156,7 +161,7 @@ function renderGrid(items, total) {
       <img class="thumb" loading="lazy" src="/api/assets/${a.uuid}/thumb" alt="${esc(a.alt_text || a.title)}">
       <div class="meta">
         <span class="title" title="${esc(a.title)}">${esc(a.title)}</span>
-        <span class="sub"><span class="badge">${a.media_type}</span><span>${fmtBytes(a.size)}</span></span>
+        <span class="sub"><span class="badge">${esc(a.media_type)}</span><span>${fmtBytes(a.size)}</span></span>
       </div>
     </div>`).join("");
   $$("#grid .card").forEach(c => c.addEventListener("click", () => openAsset(c.dataset.uuid)));
@@ -191,7 +196,7 @@ function renderFacets(facets) {
 
 function renderActiveFilters() {
   const chip = (kind, label, value = "") =>
-    `<span class="chip" data-kind="${kind}" data-value="${esc(value)}">${esc(label)}</span>`;
+    `<button type="button" class="chip" data-kind="${kind}" data-value="${esc(value)}" aria-label="Remove filter ${esc(label)}">${esc(label)}</button>`;
   const chips = [];
   if (state.q.trim()) chips.push(chip("q", `search: ${state.q.trim()}`));
   if (state.media) chips.push(chip("media", state.media));
@@ -264,7 +269,7 @@ async function openAsset(uuid) {
   $("#drawer-body").innerHTML = `
     ${preview}
     <h2 class="detail-title">${esc(a.title)}</h2>
-    <p class="muted">${a.media_type} &middot; ${a.ext?.toUpperCase()} &middot; ${fmtBytes(a.size)} ${a.width?`&middot; ${a.width}&times;${a.height}`:""}</p>
+    <p class="muted">${esc(a.media_type)} &middot; ${esc((a.ext || "").toUpperCase())} &middot; ${fmtBytes(a.size)} ${a.width?`&middot; ${a.width}&times;${a.height}`:""}</p>
     <div class="btn-row">
       <a class="btn" href="/api/assets/${uuid}/file" download>Download</a>
       ${canEdit?`<button class="btn" id="d-share">Create share link</button>`:""}

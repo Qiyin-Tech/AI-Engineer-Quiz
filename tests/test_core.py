@@ -109,6 +109,30 @@ def test_keyword_search_finds_by_title():
     assert any("harbor" in (i["title"] or "").lower() for i in res["items"])
 
 
+def test_search_filters_by_tag_and_collection():
+    asset = ingest.ingest_stream(io.BytesIO(_img_bytes(color=(75, 33, 125))),
+                                 "filter_fixture.jpg", title="Filter Fixture Harbor")
+    conn = get_conn()
+    tag_id = conn.execute("INSERT INTO tags (name) VALUES (?)", ("filter-fixture",)).lastrowid
+    collection_id = conn.execute(
+        "INSERT INTO collections (uuid, name, created_at) VALUES (?, ?, ?)",
+        ("filter-fixture", "Filter Fixture", asset["created_at"]),
+    ).lastrowid
+    conn.execute("INSERT INTO asset_tags (asset_id, tag_id) VALUES (?, ?)", (asset["id"], tag_id))
+    conn.execute("INSERT INTO collection_assets (collection_id, asset_id) VALUES (?, ?)",
+                 (collection_id, asset["id"]))
+    conn.commit()
+
+    for filters in (
+        {"tag": "FILTER-FIXTURE"},
+        {"collection_id": collection_id},
+        {"q": "harbor", "media_type": "image", "tag": "filter-fixture", "collection_id": collection_id},
+    ):
+        result = search.search(**filters)
+        assert result["total"] == 1, filters
+        assert [item["uuid"] for item in result["items"]] == [asset["uuid"]]
+
+
 def test_semantic_search_returns_ranked_results():
     ingest.ingest_stream(io.BytesIO(_img_bytes(color=(40, 150, 90), size=(330, 500))),
                          "mountain_trail.jpg", title="Mountain trail in the alpine forest")

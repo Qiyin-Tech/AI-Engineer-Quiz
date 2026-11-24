@@ -61,10 +61,12 @@ def search(
         params.append(media_type)
     if tag:
         join += (" JOIN asset_tags at ON at.asset_id = a.id"
-                 " JOIN tags t ON t.id = at.tag_id AND t.name = ?")
+                 " JOIN tags t ON t.id = at.tag_id")
+        where.append("t.name = ?")
         params.append(tag.lower())
     if collection_id:
-        join += " JOIN collection_assets ca ON ca.asset_id = a.id AND ca.collection_id = ?"
+        join += " JOIN collection_assets ca ON ca.asset_id = a.id"
+        where.append("ca.collection_id = ?")
         params.append(collection_id)
 
     where_sql = " AND ".join(where)

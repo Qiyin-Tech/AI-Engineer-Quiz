@@ -26,7 +26,7 @@ const esc = (s) => (s ?? "").toString().replace(/[&<>"]/g, c => ({"&":"&amp;","<
 $("#login-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   try {
-    const r = await api("/api/auth/login", { json: { username: $("#login-user").value, password: $("#login-pass").value } });
+    const r = await api("/api/auth/login", { method: "POST", json: { username: $("#login-user").value, password: $("#login-pass").value } });
     state.token = r.token; localStorage.setItem("keepstack_token", r.token);
     state.user = r.user; enterApp();
   } catch { $("#login-error").textContent = "Invalid credentials"; $("#login-error").classList.remove("hidden"); }
